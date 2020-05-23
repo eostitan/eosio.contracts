@@ -1275,12 +1275,11 @@ namespace eosiosystem {
 
          // functions defined in resource.cpp
          // resource DISTRIBUTION functions
-         ACTION settotal(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
-         ACTION adddistrib(name source, name account, uint64_t user_cpu_us, uint64_t user_net_words, time_point_sec timestamp);
+         ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
+         ACTION addactusg(name source, const std::vector<account_cpu>& data, time_point_sec timestamp);
          ACTION commitusage(name source, time_point_sec timestamp);
          ACTION claimdistrib(name account);
          // resource CONFIGURATION functions
-         ACTION updconfig(bool paused, uint32_t emadraglimit);
          ACTION addupdsource(name account, uint8_t in_out);
          ACTION activatefeat(name feature);
 
