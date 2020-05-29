@@ -1,20 +1,34 @@
 #pragma once
 
 #include <math.h>
+#include <eosio/crypto.hpp>
 
 namespace eosiosystem {
 
    using namespace eosio;
 
    struct account_cpu {
-     name account;
-     uint64_t cpu_usage_us;
+     name a; // account
+     uint64_t u; // cpu_usage_us
+   };
+
+   struct [[eosio::table("resusagedata"), eosio::contract("eosio.system")]] datasets
+   {
+      uint64_t id;
+      checksum256 hash;
+      std::vector<account_cpu> data; // hash of each individual data submission
+      uint64_t primary_key() const { return (id); }
+      checksum256 by_hash() const { return hash; }
    };
 
    struct [[eosio::table("resourceconf"), eosio::contract("eosio.system")]] resource_config_state
    {
       uint32_t period_seconds = 86400; // how many seconds in each period, low numbers used for testing
+      uint16_t oracles_submissions_required; // how many oracles are required to send data before modal data is used
+      uint16_t oracle_consensus_threshold; // how many oracles are required for mode to trigger distribution
+      uint16_t dataset_max_size; // how many individual accounts are submitted at once
       time_point_sec period_start; // when the period currently open for reporting started
+      std::vector<name> submitting_oracles; // oracles which have sent at least one dataset for this period
    };
 
    struct [[eosio::table("ressources"), eosio::contract("eosio.system")]] sources
@@ -29,16 +43,17 @@ namespace eosiosystem {
       uint64_t total_cpu_us;
       uint64_t total_net_words;
       uint64_t allocated_cpu = 0; // how much has been allocated to individual accounts
-      bool data_committed = false;
+//      bool data_committed = false;
+      std::vector<checksum256> submission_hash_list; // hash of each individual data submission
       uint64_t primary_key() const { return (source.value); }
    };
 
-   struct [[eosio::table("resaccusage"), eosio::contract("eosio.system")]] account_usage // scoped by oracle account
-   {
-      name account;
-      uint64_t total_cpu_us;
-      uint64_t primary_key() const { return (account.value); }
-   };
+//   struct [[eosio::table("resaccusage"), eosio::contract("eosio.system")]] account_usage // scoped by oracle account
+//   {
+//      name account;
+//      uint64_t total_cpu_us;
+//      uint64_t primary_key() const { return (account.value); }
+//   };
 
    struct [[eosio::table("resaccpay"), eosio::contract("eosio.system")]] account_pay
    {
@@ -58,9 +73,11 @@ namespace eosiosystem {
    typedef eosio::singleton<"resourceconf"_n, resource_config_state> resource_config_singleton;
    typedef eosio::multi_index<"ressources"_n, sources> sources_table;
    typedef eosio::multi_index<"ressysusage"_n, system_usage> system_usage_table;
-   typedef eosio::multi_index<"resaccusage"_n, account_usage> account_usage_table;
+//   typedef eosio::multi_index<"resaccusage"_n, account_usage> account_usage_table;
    typedef eosio::multi_index<"resaccpay"_n, account_pay> account_pay_table;
    typedef eosio::multi_index<"feattoggle"_n, feature_toggle> feature_toggle_table;
+   typedef eosio::multi_index<"resusagedata"_n, datasets, 
+            indexed_by<"hash"_n, const_mem_fun<datasets, checksum256, &datasets::by_hash>>> datasets_table;
 }
 
 namespace worbli {

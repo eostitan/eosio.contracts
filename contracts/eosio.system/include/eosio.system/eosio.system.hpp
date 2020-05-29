@@ -1271,13 +1271,13 @@ namespace eosiosystem {
          void setwgstate(time_point_sec last_inflation_print );
 
          [[eosio::action]]
-         void initresource(time_point_sec start);
+         void initresource(uint16_t dataset_max_size, uint16_t oracles_submissions_required, uint16_t oracle_consensus_threshold, time_point_sec period_start);
 
          // functions defined in resource.cpp
          // resource DISTRIBUTION functions
          ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
-         ACTION addactusg(name source, const std::vector<account_cpu>& data, time_point_sec timestamp);
-         ACTION commitusage(name source, time_point_sec timestamp);
+         ACTION addactusg(name source, uint16_t dataset_id, const std::vector<account_cpu>& data, time_point_sec timestamp);
+//         ACTION commitusage(name source, time_point_sec timestamp);
          ACTION claimdistrib(name account);
          // resource CONFIGURATION functions
          ACTION addupdsource(name account, uint8_t in_out);
