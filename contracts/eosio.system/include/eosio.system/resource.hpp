@@ -24,7 +24,6 @@ namespace eosiosystem {
    struct [[eosio::table("resourceconf"), eosio::contract("eosio.system")]] resource_config_state
    {
       uint32_t period_seconds = 86400; // how many seconds in each period, low numbers used for testing
-      uint16_t oracles_submissions_required; // how many oracles are required to send data before modal data is used
       uint16_t oracle_consensus_threshold; // how many oracles are required for mode to trigger distribution
       uint16_t dataset_max_size; // how many individual accounts are submitted at once
       time_point_sec period_start; // when the period currently open for reporting started
@@ -43,17 +42,9 @@ namespace eosiosystem {
       uint64_t total_cpu_us;
       uint64_t total_net_words;
       uint64_t allocated_cpu = 0; // how much has been allocated to individual accounts
-//      bool data_committed = false;
       std::vector<checksum256> submission_hash_list; // hash of each individual data submission
       uint64_t primary_key() const { return (source.value); }
    };
-
-//   struct [[eosio::table("resaccusage"), eosio::contract("eosio.system")]] account_usage // scoped by oracle account
-//   {
-//      name account;
-//      uint64_t total_cpu_us;
-//      uint64_t primary_key() const { return (account.value); }
-//   };
 
    struct [[eosio::table("resaccpay"), eosio::contract("eosio.system")]] account_pay
    {

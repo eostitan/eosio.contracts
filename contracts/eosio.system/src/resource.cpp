@@ -4,12 +4,11 @@
 
 namespace eosiosystem {
 
-    ACTION system_contract::initresource(uint16_t dataset_max_size, uint16_t oracles_submissions_required, uint16_t oracle_consensus_threshold, time_point_sec period_start)
+    ACTION system_contract::initresource(uint16_t dataset_max_size, uint16_t oracle_consensus_threshold, time_point_sec period_start)
     {
         require_auth(get_self());
 
         _resource_config_state.dataset_max_size = dataset_max_size;
-        _resource_config_state.oracles_submissions_required = oracles_submissions_required;
         _resource_config_state.oracle_consensus_threshold = oracle_consensus_threshold;
         _resource_config_state.period_start = period_start;
     }
@@ -105,7 +104,7 @@ namespace eosiosystem {
         // distribute user account rewards
         std::map<checksum256, uint8_t> hash_count;
         auto oracles = _resource_config_state.submitting_oracles;
-        if (oracles.size() >= _resource_config_state.oracles_submissions_required) {
+        if (oracles.size() >= _resource_config_state.oracle_consensus_threshold) {
 
             // count number of each hash
             system_usage_table u_t(get_self(), get_self().value);
@@ -137,6 +136,8 @@ namespace eosiosystem {
                     accounts_usage_data = dt_itr->data;
                 }
 
+                // expensive part (100 accounts in ~9000us)
+                auto core_sym = core_symbol();
                 account_pay_table ap_t(get_self(), get_self().value);
                 for (int i=0; i<accounts_usage_data.size(); i++) {
                     auto account = accounts_usage_data[i].a;
@@ -145,16 +146,17 @@ namespace eosiosystem {
                     if (ap_itr == ap_t.end()) {
                         ap_t.emplace(get_self(), [&](auto& t) {
                             t.account = account;
-                            t.payout = asset(account_cpu, core_symbol());
+                            t.payout = asset(account_cpu, core_sym);
                             t.timestamp = timestamp;
                         });
                     } else {
                         ap_t.modify(ap_itr, get_self(), [&](auto& t) {
-                            t.payout += asset(account_cpu, core_symbol());
+                            t.payout += asset(account_cpu, core_sym);
                             t.timestamp = timestamp;
                         });
                     }
                 }
+
             }
 
         }

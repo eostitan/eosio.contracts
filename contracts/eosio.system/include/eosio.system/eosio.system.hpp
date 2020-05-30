@@ -1271,7 +1271,7 @@ namespace eosiosystem {
          void setwgstate(time_point_sec last_inflation_print );
 
          [[eosio::action]]
-         void initresource(uint16_t dataset_max_size, uint16_t oracles_submissions_required, uint16_t oracle_consensus_threshold, time_point_sec period_start);
+         void initresource(uint16_t dataset_max_size, uint16_t oracle_consensus_threshold, time_point_sec period_start);
 
          // functions defined in resource.cpp
          // resource DISTRIBUTION functions
