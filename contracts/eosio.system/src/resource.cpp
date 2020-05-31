@@ -281,7 +281,7 @@ namespace eosiosystem {
         // hash submitted data
         std::string datatext = std::to_string(total_cpu_us) + std::to_string(total_net_words);
         checksum256 hash = sha256(datatext.c_str(), datatext.size());
-        std::vector<account_cpu> data {
+        std::vector<metric> data {
             {"cpu.us"_n, total_cpu_us},
             {"net.words"_n, total_net_words}
         };
@@ -336,7 +336,7 @@ namespace eosiosystem {
 
             // find dataset corresponding to modal hash, and distribute inflation
             if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
-                std::vector<account_cpu> accounts_usage_data;
+                std::vector<metric> accounts_usage_data;
                 datasets_table d_t(get_self(), get_self().value);
                 auto dt_hash_index = d_t.get_index<"hash"_n>();
                 auto dt_itr = dt_hash_index.find(modal_hash);
@@ -346,10 +346,8 @@ namespace eosiosystem {
 
                     print(cpu_usage_us, " ", net_usage_words, "\n");
 
-                    // todo - pay inflation
-                    // todo - add to state conf and mark as paid
-                    // todo - add row to history table
                     settotal(cpu_usage_us, net_usage_words, timestamp);
+
 
                 }
 
@@ -361,7 +359,7 @@ namespace eosiosystem {
 
     // adds the CPU used by the accounts included (for calling oracle)
     // called after the oracle has set the total
-    ACTION system_contract::addactusg(name source, uint16_t dataset_id, const std::vector<account_cpu>& data, time_point_sec timestamp)
+    ACTION system_contract::addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec timestamp)
     {  
         require_auth(source);
 //        check(is_source(source) == true, "not authorized to execute this action");
@@ -440,7 +438,7 @@ namespace eosiosystem {
 
             // find dataset corresponding to modal hash, and distribute inflation
             if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
-                std::vector<account_cpu> accounts_usage_data;
+                std::vector<metric> accounts_usage_data;
                 datasets_table d_t(get_self(), get_self().value);
                 auto dt_hash_index = d_t.get_index<"hash"_n>();
                 auto dt_itr = dt_hash_index.find(modal_hash);
@@ -467,6 +465,7 @@ namespace eosiosystem {
                             t.timestamp = timestamp;
                         });
                     }
+                    update_votes(account, 100); // ignores non existant accounts
                 }
 
             }

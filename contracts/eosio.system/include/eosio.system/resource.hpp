@@ -7,16 +7,17 @@ namespace eosiosystem {
 
    using namespace eosio;
 
-   struct account_cpu {
-     name a; // account
-     uint64_t u; // cpu_usage_us
+   // used primarily for individual accounts cpu usage, but also totals metrics
+   struct metric {
+     name a;
+     uint64_t u;
    };
 
    struct [[eosio::table("resusagedata"), eosio::contract("eosio.system")]] datasets
    {
       uint64_t id;
       checksum256 hash;
-      std::vector<account_cpu> data; // hash of each individual data submission
+      std::vector<metric> data; // hash of each individual data submission
       uint64_t primary_key() const { return (id); }
       checksum256 by_hash() const { return hash; }
    };
