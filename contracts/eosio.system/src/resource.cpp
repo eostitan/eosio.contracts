@@ -27,6 +27,29 @@ namespace eosiosystem {
 
         check(_resource_config_state.period_start == timestamp, "timestamp does not match period_start");
 
+        // check submissions are within system limits
+        uint64_t system_max_cpu = static_cast<uint64_t>(_gstate.max_block_cpu_usage) * 2 * 60 * 60 * 24;
+        check( total_cpu_us <= system_max_cpu, "measured cpu usage is greater than system total");
+        uint64_t system_max_net = static_cast<uint64_t>(_gstate.max_block_net_usage) * 2 * 60 * 60 * 24;
+        check( total_net_words * 8 <= system_max_net, "measured net usage is greater than system total");
+
+
+/*
+        float usage_cpu = static_cast<float>(total_cpu_us) / system_max_cpu;
+
+        if(usage_cpu < 0.01) {
+            usage_cpu = 0.01;
+        }
+        float usage_net = static_cast<float>(total_net_words * 8) / system_max_net;
+
+        if(usage_net < 0.01) {
+            usage_net = 0.01;
+        }
+
+        float net_percent_total = usage_net / (usage_net + usage_cpu);
+        float cpu_percent_total = usage_cpu / (usage_net + usage_cpu);
+*/
+
         system_usage_table u_t(get_self(), get_self().value);
         auto itr = u_t.find(source.value);
 
@@ -35,6 +58,22 @@ namespace eosiosystem {
         // hash submitted data
         std::string datatext = std::to_string(total_cpu_us) + std::to_string(total_net_words);
         checksum256 hash = sha256(datatext.c_str(), datatext.size());
+        std::vector<account_cpu> data {
+            {"cpu.us"_n, total_cpu_us},
+            {"net.words"_n, total_net_words}
+        };
+
+        // add data and hash to table if not already present
+        datasets_table d_t(get_self(), get_self().value);
+        auto dt_hash_index = d_t.get_index<"hash"_n>();
+        auto dt_itr = dt_hash_index.find(hash);
+        if (dt_itr->hash != hash) {
+            d_t.emplace(get_self(), [&](auto& t) {
+                t.id = d_t.available_primary_key();
+                t.hash = hash;
+                t.data = data;
+            });
+        }
 
         // add totals data
         u_t.emplace(get_self(), [&](auto& t) {
@@ -45,6 +84,56 @@ namespace eosiosystem {
         });
 
         _resource_config_state.submitting_oracles.push_back(source);
+
+
+        // distribute inflation
+        std::map<checksum256, uint8_t> hash_count;
+        auto oracles = _resource_config_state.submitting_oracles;
+        if (oracles.size() >= _resource_config_state.oracle_consensus_threshold) {
+
+            // count number of each hash
+            system_usage_table u_t(get_self(), get_self().value);
+            for (int i=0; i<oracles.size(); i++) {
+                auto ut_itr = u_t.begin();
+                ut_itr = u_t.find(oracles[i].value);
+                if (ut_itr->submission_hash_list.size() >= 1) {
+                    hash_count[ut_itr->submission_hash_list[0]]++;
+                }
+            }
+
+            // establish modal hash
+            checksum256 modal_hash;
+            uint8_t mode_count = 0;
+            for (auto const& x : hash_count) {
+                if (x.second > mode_count) {
+                    modal_hash = x.first;
+                    mode_count = x.second;
+                }
+            }
+
+            // find dataset corresponding to modal hash, and distribute inflation
+            if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
+                std::vector<account_cpu> accounts_usage_data;
+                datasets_table d_t(get_self(), get_self().value);
+                auto dt_hash_index = d_t.get_index<"hash"_n>();
+                auto dt_itr = dt_hash_index.find(modal_hash);
+                if (dt_itr->hash == modal_hash) {
+                    auto cpu_usage_us = dt_itr->data[0].u;
+                    auto net_usage_words = dt_itr->data[1].u;
+
+                    print(cpu_usage_us, " ", net_usage_words, "\n");
+
+                    // todo - pay inflation
+                    // todo - add to state conf and mark as paid
+                    // todo - add row to history table
+
+                }
+
+
+            }
+
+        }
+
     }
 
     // adds the CPU used by the accounts included (for calling oracle)
@@ -111,7 +200,7 @@ namespace eosiosystem {
             for (int i=0; i<oracles.size(); i++) {
                 auto ut_itr = u_t.begin();
                 ut_itr = u_t.find(oracles[i].value);
-                if (ut_itr->submission_hash_list.size() >= dataset_id) {
+                if (ut_itr->submission_hash_list.size() >= (dataset_id+1)) {
                     hash_count[ut_itr->submission_hash_list[dataset_id]]++;
                 }
             }
@@ -166,6 +255,22 @@ namespace eosiosystem {
     // called by individual accounts to claim their distribution
     ACTION system_contract::claimdistrib(name account)
     {
+        require_auth(account);
+//        check(!_resource_config_state.locked, "cannot claim while inflation calculation is running");
+
+        account_pay_table a_t(get_self(), get_self().value);
+        auto itr = a_t.find(account.value);
+        check(itr != a_t.end(), "account not found");
+        check(itr->payout != asset( 0, core_symbol() ), "zero balance to claim");
+
+        auto feature_itr = _features.find("resource"_n.value);
+        bool resource_active = feature_itr == _features.end() ? false : feature_itr->active;
+        if(resource_active)
+        {
+            token::transfer_action transfer_act{token_account, {{usage_account, active_permission}, {account, active_permission}}};
+            transfer_act.send(usage_account, account, itr->payout, "utility reward");
+        }
+        itr = a_t.erase(itr);
     }
 
     ACTION system_contract::addupdsource(name account, uint8_t in_out)
