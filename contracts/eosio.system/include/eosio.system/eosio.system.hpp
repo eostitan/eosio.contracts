@@ -1286,6 +1286,7 @@ namespace eosiosystem {
          // resource helper functions
          bool is_source(name source);
          void update_votes( const name& voter_name, uint64_t weight );
+         void settotal(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
 
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
          using setacctram_action = eosio::action_wrapper<"setacctram"_n, &system_contract::setacctram>;

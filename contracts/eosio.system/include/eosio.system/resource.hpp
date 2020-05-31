@@ -28,6 +28,7 @@ namespace eosiosystem {
       uint16_t dataset_max_size; // how many individual accounts are submitted at once
       time_point_sec period_start; // when the period currently open for reporting started
       std::vector<name> submitting_oracles; // oracles which have sent at least one dataset for this period
+      uint32_t emadraglimit = 2;
    };
 
    struct [[eosio::table("ressources"), eosio::contract("eosio.system")]] sources
@@ -36,6 +37,7 @@ namespace eosiosystem {
       uint64_t primary_key() const { return (account.value); }
    };
 
+   // totals data as submitted by each oracle
    struct [[eosio::table("ressysusage"), eosio::contract("eosio.system")]] system_usage
    {
       name source; // oracle source
@@ -44,6 +46,34 @@ namespace eosiosystem {
       uint64_t allocated_cpu = 0; // how much has been allocated to individual accounts
       std::vector<checksum256> submission_hash_list; // hash of each individual data submission
       uint64_t primary_key() const { return (source.value); }
+   };
+
+   struct [[eosio::table("reshistory"), eosio::contract("eosio.system")]] system_usage_history
+   {
+      uint64_t id;
+      uint32_t daycount;
+      uint64_t total_cpu_us;
+      uint64_t total_net_words;
+      float net_percent_total;
+      float cpu_percent_total;
+      float use_cpu;
+      float use_net;
+      float ma_cpu;
+      float ma_net;
+      float ema_cpu;
+      float ema_net;
+      float ema_util_total;
+      float utility;
+      float utility_daily;
+      float bppay;
+      float bppay_daily;
+      float inflation;
+      float inflation_daily;
+      asset utility_tokens;
+      asset bppay_tokens;
+      asset net_tokens;
+      time_point_sec timestamp;
+      uint64_t primary_key() const { return (id); }
    };
 
    struct [[eosio::table("resaccpay"), eosio::contract("eosio.system")]] account_pay
@@ -64,7 +94,7 @@ namespace eosiosystem {
    typedef eosio::singleton<"resourceconf"_n, resource_config_state> resource_config_singleton;
    typedef eosio::multi_index<"ressources"_n, sources> sources_table;
    typedef eosio::multi_index<"ressysusage"_n, system_usage> system_usage_table;
-//   typedef eosio::multi_index<"resaccusage"_n, account_usage> account_usage_table;
+   typedef eosio::multi_index<"reshistory"_n, system_usage_history> system_usage_history_table;
    typedef eosio::multi_index<"resaccpay"_n, account_pay> account_pay_table;
    typedef eosio::multi_index<"feattoggle"_n, feature_toggle> feature_toggle_table;
    typedef eosio::multi_index<"resusagedata"_n, datasets, 

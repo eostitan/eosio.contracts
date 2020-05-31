@@ -4,6 +4,212 @@
 
 namespace eosiosystem {
 
+    void system_contract::settotal(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp)
+    {
+
+//        check(!_resource_config_state.locked, "prior collection period is still open");
+        check(total_cpu_us > 0, "cpu measurement must be greater than 0");
+        check(total_net_words > 0, "net measurement must be greater than 0");
+
+        system_usage_history_table u_t(get_self(), get_self().value);
+        auto itr = u_t.end();
+        itr--;
+
+        // Initial Inflation
+        float VT = 0.0185; // Initial Inflation Constant for Value Transfer
+        float MP = 0.2947; // TO-DO: move these 2 constants to the config talbe for easier adjusting?
+
+        uint64_t draglimit = _resource_config_state.emadraglimit;
+        uint64_t day_count = itr->daycount + 1;
+
+        float previousAverageCPU = itr->ma_cpu;
+        float previousAverageNET = itr->ma_net;
+
+
+        uint64_t system_max_cpu = static_cast<uint64_t>(_gstate.max_block_cpu_usage) * 2 * 60 * 60 * 24;
+        check( total_cpu_us <= system_max_cpu, "measured cpu usage is greater than system total");
+        float usage_cpu = static_cast<float>(total_cpu_us) / system_max_cpu;
+
+        if(usage_cpu < 0.01) {
+            usage_cpu = 0.01;
+        }
+
+        uint64_t system_max_net = static_cast<uint64_t>(_gstate.max_block_net_usage) * 2 * 60 * 60 * 24;
+        check( total_net_words * 8 <= system_max_net, "measured net usage is greater than system total");
+        float usage_net = static_cast<float>(total_net_words * 8) / system_max_net;
+
+        if(usage_net < 0.01) {
+            usage_net = 0.01;
+        }
+
+        float net_percent_total = usage_net / (usage_net + usage_cpu);
+        float cpu_percent_total = usage_cpu / (usage_net + usage_cpu);
+
+         print(" :: system_max_net: ");
+         print(std::to_string(system_max_net));
+
+         print(" :: system_max_cpu: ");
+         print(std::to_string(system_max_cpu));
+
+         print(" :: usage_cpu: ");
+         print(std::to_string(usage_cpu));
+
+        float ma_cpu_total = 0.0;
+        float ma_net_total = 0.0;
+
+        itr = u_t.end();
+        for (int i = 1; i < draglimit; i++)
+        {
+            itr--;
+            ma_cpu_total += itr->use_cpu;
+            ma_net_total += itr->use_net;
+
+            if (itr == u_t.begin())
+            {
+                break;
+            }
+        }
+
+        // calculate period for moving averages during bootstrap period
+        uint8_t period = day_count < draglimit ? day_count + 1 : draglimit;
+
+        print(" :: period: ");
+        print(std::to_string(period));
+
+        float UTIL_CPU_MA = worbli::calcMA(ma_cpu_total, period, usage_cpu);
+        float UTIL_NET_MA = worbli::calcMA(ma_net_total, period, usage_net);
+
+        float UTIL_CPU_EMA;
+        float UTIL_NET_EMA;
+
+        uint64_t pk = u_t.available_primary_key();
+
+        // use simple moving average until we reach draglimit samples
+        if (pk >= draglimit)
+        {
+            UTIL_CPU_EMA = worbli::calcEMA(previousAverageCPU, draglimit, usage_cpu);
+            UTIL_NET_EMA = worbli::calcEMA(previousAverageNET, draglimit, usage_net);
+        }
+        else
+        {
+            UTIL_CPU_EMA = UTIL_CPU_MA;
+            UTIL_NET_EMA = UTIL_NET_MA;
+        }
+        float UTIL_TOTAL_EMA = (UTIL_CPU_EMA + UTIL_NET_EMA) / 2;
+
+        if(UTIL_TOTAL_EMA < 0.01) {
+            UTIL_TOTAL_EMA = 0.01;
+        }
+
+        if(UTIL_TOTAL_EMA == 1.0) {
+            UTIL_TOTAL_EMA = 0.99;
+        }
+
+        float inflation = (1 - UTIL_TOTAL_EMA) / (1 - UTIL_TOTAL_EMA - worbli::get_c(UTIL_TOTAL_EMA) * VT) - 1;
+
+        float BP_U = MP * worbli::get_c(UTIL_TOTAL_EMA);
+        float Upaygross = pow((1 + inflation), (1 - BP_U)) - 1;
+        float Bppay = inflation - Upaygross;
+
+        print(" :: UTIL_TOTAL_EMA: ");
+        print(std::to_string(UTIL_TOTAL_EMA));
+
+        print(" :: inflation: ");
+        print(std::to_string(inflation));
+
+        print(" :: BP_U: ");
+        print(std::to_string(BP_U));
+
+        print(" :: Upaygross: ");
+        print(std::to_string(Upaygross));
+
+        print(" :: Bppay: ");
+        print(std::to_string(Bppay));
+
+        const asset token_supply = eosio::token::get_supply(token_account, core_symbol().code());
+
+        // Inflation waterfall
+        float Min_Upaynet = inflation * UTIL_TOTAL_EMA;
+
+        print(" :: Min_Upaynet: ");
+        print(std::to_string(Min_Upaynet));
+
+        float Waterfall_bp = inflation * (1 - UTIL_TOTAL_EMA);
+
+        print(" :: Waterfall_bp: ");
+        print(std::to_string(Waterfall_bp));
+
+        float Bppay_final = fmin(Bppay, Waterfall_bp);
+
+        print(" :: Bppay_final: ");
+        print(std::to_string(Bppay_final));
+
+        float Uppaynet = inflation - Bppay_final;
+
+        print(" :: Uppaynet: ");
+        print(std::to_string(Uppaynet));
+
+        double Daily_i_U = pow(1 + inflation, static_cast<double>(1) / 365) - 1;
+
+        print(" :: Daily_i_U: ");
+        print(std::to_string(Daily_i_U));
+
+        float utility_daily = (Uppaynet / inflation) * Daily_i_U;                               //allocate proportionally to Utility
+        float bppay_daily = (Bppay_final / inflation) * Daily_i_U;                            //allocate proportionally to BPs
+
+        float cpu_daily = cpu_percent_total * utility_daily;
+        float net_daily = utility_daily - cpu_daily;
+
+
+        // calculate inflation amount
+        auto utility_tokens = static_cast<int64_t>( (cpu_daily * double(token_supply.amount)));
+        auto bppay_tokens = static_cast<int64_t>( ((bppay_daily) * double(token_supply.amount)));
+        auto net_tokens = static_cast<int64_t>( (net_daily * double(token_supply.amount)));
+
+        print(" :: utility_tokens: ");
+        print(std::to_string(utility_tokens));
+
+        u_t.emplace(get_self(), [&](auto &h) {
+            h.id = pk;
+            h.timestamp = timestamp;
+            h.daycount = day_count;
+            h.total_cpu_us = total_cpu_us;
+            h.total_net_words = total_net_words;
+            h.net_percent_total = net_percent_total;
+            h.cpu_percent_total = cpu_percent_total;
+            h.use_cpu = usage_cpu;
+            h.use_net = usage_net;
+            h.ma_cpu = UTIL_CPU_MA;
+            h.ma_net = UTIL_NET_MA;
+            h.ema_cpu = UTIL_CPU_EMA;
+            h.ema_net = UTIL_NET_EMA;
+            h.ema_util_total = UTIL_TOTAL_EMA;
+            h.utility = Upaygross;
+            h.utility_daily = utility_daily;
+            h.bppay = Bppay;
+            h.bppay_daily = bppay_daily;
+            h.inflation = inflation;
+            h.inflation_daily = Daily_i_U;
+            h.utility_tokens = asset(utility_tokens, core_symbol() );
+            h.bppay_tokens = asset(bppay_tokens, core_symbol() );
+            h.net_tokens = asset(net_tokens, core_symbol() );
+        });
+
+/*        
+
+        // open contract for user stats
+        _resource_config_state.locked = true;
+
+        // reset totals for user stats
+        _resource_config_state.allocated_cpu = 0.0;
+        _resource_config_state.allocated_net = 0.0;
+        _resource_config_state.allocated_total = 0.0;
+        _resource_config_state.utility_cpu_pay = asset( 0, core_symbol() );
+
+*/
+    }
+
+
     ACTION system_contract::initresource(uint16_t dataset_max_size, uint16_t oracle_consensus_threshold, time_point_sec period_start)
     {
         require_auth(get_self());
@@ -11,6 +217,24 @@ namespace eosiosystem {
         _resource_config_state.dataset_max_size = dataset_max_size;
         _resource_config_state.oracle_consensus_threshold = oracle_consensus_threshold;
         _resource_config_state.period_start = period_start;
+
+        system_usage_history_table u_t(get_self(), get_self().value);
+        if (u_t.begin() == u_t.end()) {
+            uint64_t pk = u_t.available_primary_key();
+            u_t.emplace(get_self(), [&](auto &u) {
+                u.id = pk;
+                u.timestamp = period_start;
+                u.use_cpu = 0;
+                u.use_net = 0;
+                u.daycount = 0;
+                u.ma_cpu = 0;
+                u.ma_net = 0;
+                u.ema_cpu = 0;
+                u.ema_net = 0;
+                u.utility_daily = 0;
+                u.bppay_daily = 0;
+            });
+        }
     }
 
     // sets total resources used by system (for calling oracle)
@@ -32,7 +256,6 @@ namespace eosiosystem {
         check( total_cpu_us <= system_max_cpu, "measured cpu usage is greater than system total");
         uint64_t system_max_net = static_cast<uint64_t>(_gstate.max_block_net_usage) * 2 * 60 * 60 * 24;
         check( total_net_words * 8 <= system_max_net, "measured net usage is greater than system total");
-
 
 /*
         float usage_cpu = static_cast<float>(total_cpu_us) / system_max_cpu;
@@ -126,9 +349,9 @@ namespace eosiosystem {
                     // todo - pay inflation
                     // todo - add to state conf and mark as paid
                     // todo - add row to history table
+                    settotal(cpu_usage_us, net_usage_words, timestamp);
 
                 }
-
 
             }
 
