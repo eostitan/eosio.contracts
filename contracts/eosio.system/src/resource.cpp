@@ -474,6 +474,31 @@ namespace eosiosystem {
 
     }
 
+    // called by anyone from 48hrs after the current period start
+    // clears tables and advances period start
+    ACTION system_contract::nextperiod()
+    {
+        auto current_seconds = current_time_point().sec_since_epoch();
+        auto period_start_seconds = _resource_config_state.period_start.sec_since_epoch();
+        if (current_seconds >= (period_start_seconds + (_resource_config_state.period_seconds * 2))) {
+
+            datasets_table d_t(get_self(), get_self().value);
+            auto dt_itr = d_t.begin();
+            while (dt_itr != d_t.end()) {
+                dt_itr = d_t.erase(dt_itr);
+            }
+
+            system_usage_table u_t(get_self(), get_self().value);
+            auto ut_itr = u_t.begin();
+            while (ut_itr != u_t.end()) {
+                ut_itr = u_t.erase(ut_itr);
+            }
+
+            _resource_config_state.submitting_oracles.clear();
+            _resource_config_state.period_start = time_point_sec(_resource_config_state.period_start.sec_since_epoch() + _resource_config_state.period_seconds);
+        }
+    }
+
     // called by individual accounts to claim their distribution
     ACTION system_contract::claimdistrib(name account)
     {

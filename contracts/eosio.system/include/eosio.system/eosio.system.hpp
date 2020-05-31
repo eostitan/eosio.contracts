@@ -1278,6 +1278,7 @@ namespace eosiosystem {
          ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
          ACTION addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec timestamp);
 //         ACTION commitusage(name source, time_point_sec timestamp);
+         ACTION nextperiod();
          ACTION claimdistrib(name account);
          // resource CONFIGURATION functions
          ACTION addupdsource(name account, uint8_t in_out);
