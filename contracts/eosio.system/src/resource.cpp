@@ -4,7 +4,8 @@
 
 namespace eosiosystem {
 
-    void system_contract::settotal(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp)
+    // called from settotalusg 
+    void system_contract::set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp)
     {
 
 //        check(!_resource_config_state.locked, "prior collection period is still open");
@@ -195,18 +196,63 @@ namespace eosiosystem {
             h.net_tokens = asset(net_tokens, core_symbol() );
         });
 
-/*        
+    }
 
-        // open contract for user stats
-        _resource_config_state.locked = true;
+    // called from settotalusg 
+    void system_contract::issue_inflation(time_point_sec timestamp) {
 
-        // reset totals for user stats
-        _resource_config_state.allocated_cpu = 0.0;
-        _resource_config_state.allocated_net = 0.0;
-        _resource_config_state.allocated_total = 0.0;
-        _resource_config_state.utility_cpu_pay = asset( 0, core_symbol() );
+        system_usage_history_table u_t(get_self(), get_self().value);
+        auto itr_u = u_t.end();
+        itr_u--;
 
-*/
+        auto feature_itr = _features.find("resource"_n.value);
+        bool resource_active = feature_itr == _features.end() ? false : feature_itr->active;
+        if(resource_active) {
+         {
+            token::issue_action issue_act{token_account, {{get_self(), active_permission}}};
+            issue_act.send(get_self(), itr_u->bppay_tokens + itr_u->utility_tokens, "issue daily inflation");
+         }
+         {
+            token::transfer_action transfer_act{token_account, {{get_self(), active_permission}}};
+            transfer_act.send(get_self(), ppay_account, itr_u->bppay_tokens, "producer daily");
+            transfer_act.send(get_self(), usage_account, itr_u->utility_tokens, "usage daily");
+         }
+
+         std::vector<name> active_producers;
+         for (const auto &p : _producers)
+         {
+            if (p.active())
+            {
+               active_producers.emplace_back(p.owner);
+            }
+         }
+
+// todo - evaluate this
+//         check(active_producers.size() == _gstate.last_producer_schedule_size, "active_producers must equal last_producer_schedule_size");
+
+         uint64_t earned_pay = uint64_t(itr_u->bppay_tokens.amount / active_producers.size());
+         for (const auto &p : active_producers)
+         {
+
+            auto pay_itr = _producer_pay.find(p.value);
+
+            if (pay_itr == _producer_pay.end())
+            {
+               pay_itr = _producer_pay.emplace(p, [&](auto &pay) {
+                  pay.owner = p;
+                  pay.earned_pay = earned_pay;
+               });
+            }
+            else
+            {
+               _producer_pay.modify(pay_itr, same_payer, [&](auto &pay) {
+                  pay.earned_pay += earned_pay;
+               });
+            }
+         }
+        }
+
+        _wgstate.last_inflation_print = timestamp;
     }
 
 
@@ -256,22 +302,6 @@ namespace eosiosystem {
         check( total_cpu_us <= system_max_cpu, "measured cpu usage is greater than system total");
         uint64_t system_max_net = static_cast<uint64_t>(_gstate.max_block_net_usage) * 2 * 60 * 60 * 24;
         check( total_net_words * 8 <= system_max_net, "measured net usage is greater than system total");
-
-/*
-        float usage_cpu = static_cast<float>(total_cpu_us) / system_max_cpu;
-
-        if(usage_cpu < 0.01) {
-            usage_cpu = 0.01;
-        }
-        float usage_net = static_cast<float>(total_net_words * 8) / system_max_net;
-
-        if(usage_net < 0.01) {
-            usage_net = 0.01;
-        }
-
-        float net_percent_total = usage_net / (usage_net + usage_cpu);
-        float cpu_percent_total = usage_cpu / (usage_net + usage_cpu);
-*/
 
         system_usage_table u_t(get_self(), get_self().value);
         auto itr = u_t.find(source.value);
@@ -346,8 +376,8 @@ namespace eosiosystem {
 
                     print(cpu_usage_us, " ", net_usage_words, "\n");
 
-                    settotal(cpu_usage_us, net_usage_words, timestamp);
-
+                    set_total(cpu_usage_us, net_usage_words, timestamp);
+                    issue_inflation(timestamp);
 
                 }
 
