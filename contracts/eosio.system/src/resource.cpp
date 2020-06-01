@@ -294,7 +294,7 @@ namespace eosiosystem {
         check(total_net_words > 0, "net measurement must be greater than 0");
 
         // todo - check timestamp and advance _resource_config_state if necessary
-
+        check(!_resource_config_state.inflation_transferred, "inflation already transferred for this period");
         check(_resource_config_state.period_start == timestamp, "timestamp does not match period_start");
 
         // check submissions are within system limits
@@ -378,7 +378,7 @@ namespace eosiosystem {
 
                     set_total(cpu_usage_us, net_usage_words, timestamp);
                     issue_inflation(timestamp);
-
+                    _resource_config_state.inflation_transferred = true;
                 }
 
             }
@@ -396,6 +396,7 @@ namespace eosiosystem {
 
         int length = data.size();
         check(length>0, "must supply more than zero data values");
+        check(!_resource_config_state.account_distributions_made, "account distributions already made for this period");
         check(length<=_resource_config_state.dataset_max_size, "must supply fewer data values");
 
         check(_resource_config_state.period_start == timestamp, "timestamp does not match period_start");
@@ -496,6 +497,7 @@ namespace eosiosystem {
                         });
                     }
                     update_votes(account, 100); // ignores non existant accounts
+                    _resource_config_state.account_distributions_made = true;
                 }
 
             }
@@ -526,6 +528,8 @@ namespace eosiosystem {
 
             _resource_config_state.submitting_oracles.clear();
             _resource_config_state.period_start = time_point_sec(_resource_config_state.period_start.sec_since_epoch() + _resource_config_state.period_seconds);
+            _resource_config_state.inflation_transferred = false;
+            _resource_config_state.account_distributions_made = false;
         }
     }
 

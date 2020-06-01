@@ -29,6 +29,8 @@ namespace eosiosystem {
       uint16_t dataset_max_size; // how many individual accounts are submitted at once
       time_point_sec period_start; // when the period currently open for reporting started
       std::vector<name> submitting_oracles; // oracles which have sent at least one dataset for this period
+      bool inflation_transferred = false;
+      bool account_distributions_made = false;
       uint32_t emadraglimit = 2;
    };
 
