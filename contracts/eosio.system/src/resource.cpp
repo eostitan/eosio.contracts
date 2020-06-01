@@ -5,7 +5,7 @@
 namespace eosiosystem {
 
     // called from settotalusg 
-    void system_contract::set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp)
+    void system_contract::set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start)
     {
 
 //        check(!_resource_config_state.locked, "prior collection period is still open");
@@ -172,7 +172,7 @@ namespace eosiosystem {
 
         u_t.emplace(get_self(), [&](auto &h) {
             h.id = pk;
-            h.timestamp = timestamp;
+            h.timestamp = period_start;
             h.daycount = day_count;
             h.total_cpu_us = total_cpu_us;
             h.total_net_words = total_net_words;
@@ -199,7 +199,7 @@ namespace eosiosystem {
     }
 
     // called from settotalusg 
-    void system_contract::issue_inflation(time_point_sec timestamp) {
+    void system_contract::issue_inflation(time_point_sec period_start) {
 
         system_usage_history_table u_t(get_self(), get_self().value);
         auto itr_u = u_t.end();
@@ -252,7 +252,7 @@ namespace eosiosystem {
          }
         }
 
-        _wgstate.last_inflation_print = timestamp;
+        _wgstate.last_inflation_print = period_start;
     }
 
 
@@ -285,7 +285,7 @@ namespace eosiosystem {
 
     // sets total resources used by system (for calling oracle)
     // this must be called by oracle before adding individual cpu usage
-    ACTION system_contract::settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp)
+    ACTION system_contract::settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start)
     {
         require_auth(source);
 //        check(is_source(source) == true, "not authorized to execute this action");
@@ -295,7 +295,7 @@ namespace eosiosystem {
 
         // todo - check timestamp and advance _resource_config_state if necessary
         check(!_resource_config_state.inflation_transferred, "inflation already transferred for this period");
-        check(_resource_config_state.period_start == timestamp, "timestamp does not match period_start");
+        check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
 
         // check submissions are within system limits
         uint64_t system_max_cpu = static_cast<uint64_t>(_gstate.max_block_cpu_usage) * 2 * 60 * 60 * 24;
@@ -373,11 +373,8 @@ namespace eosiosystem {
                 if (dt_itr->hash == modal_hash) {
                     auto cpu_usage_us = dt_itr->data[0].u;
                     auto net_usage_words = dt_itr->data[1].u;
-
-                    print(cpu_usage_us, " ", net_usage_words, "\n");
-
-                    set_total(cpu_usage_us, net_usage_words, timestamp);
-                    issue_inflation(timestamp);
+                    set_total(cpu_usage_us, net_usage_words, period_start);
+                    issue_inflation(period_start);
                     _resource_config_state.inflation_transferred = true;
                 }
 
@@ -389,7 +386,7 @@ namespace eosiosystem {
 
     // adds the CPU used by the accounts included (for calling oracle)
     // called after the oracle has set the total
-    ACTION system_contract::addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec timestamp)
+    ACTION system_contract::addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec period_start)
     {  
         require_auth(source);
 //        check(is_source(source) == true, "not authorized to execute this action");
@@ -399,7 +396,7 @@ namespace eosiosystem {
         check(!_resource_config_state.account_distributions_made, "account distributions already made for this period");
         check(length<=_resource_config_state.dataset_max_size, "must supply fewer data values");
 
-        check(_resource_config_state.period_start == timestamp, "timestamp does not match period_start");
+        check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
 
         system_usage_table u_t(get_self(), get_self().value);
         auto ut_itr = u_t.find(source.value);
@@ -488,12 +485,12 @@ namespace eosiosystem {
                         ap_t.emplace(get_self(), [&](auto& t) {
                             t.account = account;
                             t.payout = asset(account_cpu, core_sym);
-                            t.timestamp = timestamp;
+                            t.timestamp = period_start;
                         });
                     } else {
                         ap_t.modify(ap_itr, get_self(), [&](auto& t) {
                             t.payout += asset(account_cpu, core_sym);
-                            t.timestamp = timestamp;
+                            t.timestamp = period_start;
                         });
                     }
                     update_votes(account, 100); // ignores non existant accounts

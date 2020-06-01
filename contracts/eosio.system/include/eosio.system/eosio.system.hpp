@@ -1275,8 +1275,8 @@ namespace eosiosystem {
 
          // functions defined in resource.cpp
          // resource DISTRIBUTION functions
-         ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
-         ACTION addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec timestamp);
+         ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start);
+         ACTION addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec period_start);
 //         ACTION commitusage(name source, time_point_sec timestamp);
          ACTION nextperiod();
          ACTION claimdistrib(name account);
@@ -1287,8 +1287,8 @@ namespace eosiosystem {
          // resource helper functions
          bool is_source(name source);
          void update_votes( const name& voter_name, uint64_t weight );
-         void set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec timestamp);
-         void issue_inflation(time_point_sec timestamp);
+         void set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start);
+         void issue_inflation(time_point_sec period_start);
 
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
          using setacctram_action = eosio::action_wrapper<"setacctram"_n, &system_contract::setacctram>;
