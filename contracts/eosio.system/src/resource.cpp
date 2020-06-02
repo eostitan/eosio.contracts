@@ -393,10 +393,12 @@ namespace eosiosystem {
 
         int length = data.size();
         check(length>0, "must supply more than zero data values");
-        check(!_resource_config_state.account_distributions_made, "account distributions already made for this period");
-        check(length<=_resource_config_state.dataset_max_size, "must supply fewer data values");
 
+        check(length<=_resource_config_state.dataset_max_size, "must supply fewer data values");
         check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
+
+        auto v = _resource_config_state.account_distributions_made;
+        check(std::find(v.begin(), v.end(), dataset_id) == v.end(), "account distributions already made for this dataset and period");
 
         system_usage_table u_t(get_self(), get_self().value);
         auto ut_itr = u_t.find(source.value);
@@ -494,8 +496,8 @@ namespace eosiosystem {
                         });
                     }
                     update_votes(account, 100); // ignores non existant accounts
-                    _resource_config_state.account_distributions_made = true;
                 }
+                _resource_config_state.account_distributions_made.push_back(dataset_id);
 
             }
 
@@ -526,7 +528,7 @@ namespace eosiosystem {
             _resource_config_state.submitting_oracles.clear();
             _resource_config_state.period_start = time_point_sec(_resource_config_state.period_start.sec_since_epoch() + _resource_config_state.period_seconds);
             _resource_config_state.inflation_transferred = false;
-            _resource_config_state.account_distributions_made = false;
+            _resource_config_state.account_distributions_made.clear();
         }
     }
 

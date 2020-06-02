@@ -30,7 +30,7 @@ namespace eosiosystem {
       time_point_sec period_start; // when the period currently open for reporting started
       std::vector<name> submitting_oracles; // oracles which have sent at least one dataset for this period
       bool inflation_transferred = false;
-      bool account_distributions_made = false;
+      std::vector<uint16_t> account_distributions_made = {}; // which datasets have reached consensus and been distributed
       uint32_t emadraglimit = 2;
    };
 
