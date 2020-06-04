@@ -34,9 +34,20 @@ namespace eosiosystem {
       uint32_t emadraglimit = 2;
    };
 
+   // represents the state of oracle bidding for the period
+   // when oracle quotes, if accepted collateral is taken from liquid_balance
+
    struct [[eosio::table("ressources"), eosio::contract("eosio.system")]] sources
    {
       name account;
+      time_point_sec period_start;
+      uint32_t hs_score; // how many modal submissions oracle has made
+      float exponential_avg_success_score;
+      asset collateral_fund; // available for future collateral
+      asset collateral_posted; // returned to liquid after successful submission round
+      asset quote_fee; // how much oracle will be paid for modal submission
+      float quote_score; // calculated based on hs_score/collateral etc.
+      bool quote_accepted; // active participant in this round
       uint64_t primary_key() const { return (account.value); }
    };
 

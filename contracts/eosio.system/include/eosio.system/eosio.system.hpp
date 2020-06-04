@@ -1281,7 +1281,11 @@ namespace eosiosystem {
          ACTION nextperiod();
          ACTION claimdistrib(name account);
          // resource CONFIGURATION functions
-         ACTION addupdsource(name account, uint8_t in_out);
+//         ACTION addupdsource(name account, uint8_t in_out);
+         ACTION adddatasrc(name account);
+         ACTION deldatasrc(name account);
+         ACTION dataquote(name account, asset quote_fee, asset collateral);
+         ACTION reswithdraw(name account, asset quantity);
          ACTION activatefeat(name feature);
 
          // resource helper functions
@@ -1289,6 +1293,9 @@ namespace eosiosystem {
          void update_votes( const name& voter_name, uint64_t weight );
          void set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start);
          void issue_inflation(time_point_sec period_start);
+
+         [[eosio::on_notify("eosio.token::transfer")]]
+         void ontransfer(name from, name to, asset quantity, std::string memo);
 
          using init_action = eosio::action_wrapper<"init"_n, &system_contract::init>;
          using setacctram_action = eosio::action_wrapper<"setacctram"_n, &system_contract::setacctram>;

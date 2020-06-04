@@ -556,23 +556,84 @@ namespace eosiosystem {
         itr = a_t.erase(itr);
     }
 
-    ACTION system_contract::addupdsource(name account, uint8_t in_out)
+    ACTION system_contract::adddatasrc(name account)
     {
         require_auth(get_self());
         sources_table s_t(get_self(), get_self().value);
-        if (in_out == 0)
-        {
-            auto itr = s_t.find(account.value);
-            check(itr != s_t.end(), "authorized source account not found during removal");
-            itr = s_t.erase(itr);
-        }
-        else
-        {
-            auto itr2 = s_t.find(account.value);
-            check(itr2 == s_t.end(), "authorized source account already exists in sourceauths table");
-            s_t.emplace(get_self(), [&](auto &s) {
+        auto itr = s_t.find(account.value);
+        check(itr == s_t.end(), "authorized source account already exists in sources table");
+        s_t.emplace(get_self(), [&](auto &s) {
             s.account = account;
-            });
+            s.period_start = _resource_config_state.period_start; // todo - advance
+            s.hs_score = 0;
+            s.exponential_avg_success_score = 0;
+            s.collateral_fund = asset(0, core_symbol() );
+            s.collateral_posted = asset(0, core_symbol() );
+            s.quote_fee = asset(0, core_symbol() );
+            s.quote_score = 0;
+            s.quote_accepted = false;
+        });
+    }
+
+    ACTION system_contract::deldatasrc(name account)
+    {
+        require_auth(get_self());
+        sources_table s_t(get_self(), get_self().value);
+        auto itr = s_t.find(account.value);
+        check(itr != s_t.end(), "authorized source account not found during removal");
+        itr = s_t.erase(itr);
+    }
+
+    // bid for inclusion in oracle set for data submission for next period
+    ACTION system_contract::dataquote(name account, asset quote_fee, asset collateral)
+    {
+        require_auth(account);
+
+        auto collateral_required = asset(1, core_symbol() );
+
+        sources_table s_t(get_self(), get_self().value);
+        auto itr = s_t.find(account.value);
+        check(itr != s_t.end(), "account is not approved");
+        check(itr->collateral_fund >= collateral_required, "insufficient balance for collateralization");
+
+        collateral = std::max(collateral, collateral_required);
+
+        s_t.modify(itr, same_payer, [&](auto &t) {
+            t.quote_fee = quote_fee;
+            t.collateral_fund -= collateral;
+            t.collateral_posted = collateral;
+            // todo - calculate quote_score
+        });
+
+    }
+
+    ACTION system_contract::reswithdraw(name account, asset quantity)
+    {
+        require_auth(account);
+        sources_table s_t(get_self(), get_self().value);
+        auto itr = s_t.find(account.value);
+        check(itr != s_t.end(), "account is not approved");
+        check(itr->collateral_fund >= quantity, "insufficient balance");
+        s_t.modify(itr, same_payer, [&](auto &t) {
+            t.collateral_fund -= quantity;
+        });
+
+        action(
+          permission_level{ _self, "active"_n },
+          "eosio.token"_n, "transfer"_n,
+          std::make_tuple(_self, account, quantity, std::string("Withdraw Resource Oracle Collateral"))
+        ).send();
+    }
+
+    void system_contract::ontransfer(name from, name to, asset quantity, std::string memo) {
+        if (!(from == _self)) {
+            if (memo == "Fund Resource Oracle Collateral") {
+                sources_table s_t(get_self(), get_self().value);
+                auto itr = s_t.find(from.value);
+                s_t.modify(itr, same_payer, [&](auto &t) {
+                    t.collateral_fund += quantity;
+                });
+            }
         }
     }
 
