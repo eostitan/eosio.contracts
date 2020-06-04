@@ -294,7 +294,6 @@ namespace eosiosystem {
         check(total_net_words > 0, "net measurement must be greater than 0");
 
         // todo - check timestamp and advance _resource_config_state if necessary
-        check(!_resource_config_state.inflation_transferred, "inflation already transferred for this period");
         check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
 
         // check submissions are within system limits
@@ -339,48 +338,51 @@ namespace eosiosystem {
         _resource_config_state.submitting_oracles.push_back(source);
 
 
-        // distribute inflation
-        std::map<checksum256, uint8_t> hash_count;
-        auto oracles = _resource_config_state.submitting_oracles;
-        if (oracles.size() >= _resource_config_state.oracle_consensus_threshold) {
+        // distribute inflation (if it hasn't been done)
+        if (!_resource_config_state.inflation_transferred) {
+            std::map<checksum256, uint8_t> hash_count;
+            auto oracles = _resource_config_state.submitting_oracles;
+            if (oracles.size() >= _resource_config_state.oracle_consensus_threshold) {
 
-            // count number of each hash
-            system_usage_table u_t(get_self(), get_self().value);
-            for (int i=0; i<oracles.size(); i++) {
-                auto ut_itr = u_t.begin();
-                ut_itr = u_t.find(oracles[i].value);
-                if (ut_itr->submission_hash_list.size() >= 1) {
-                    hash_count[ut_itr->submission_hash_list[0]]++;
-                }
-            }
-
-            // establish modal hash
-            checksum256 modal_hash;
-            uint8_t mode_count = 0;
-            for (auto const& x : hash_count) {
-                if (x.second > mode_count) {
-                    modal_hash = x.first;
-                    mode_count = x.second;
-                }
-            }
-
-            // find dataset corresponding to modal hash, and distribute inflation
-            if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
-                std::vector<metric> accounts_usage_data;
-                datasets_table d_t(get_self(), get_self().value);
-                auto dt_hash_index = d_t.get_index<"hash"_n>();
-                auto dt_itr = dt_hash_index.find(modal_hash);
-                if (dt_itr->hash == modal_hash) {
-                    auto cpu_usage_us = dt_itr->data[0].u;
-                    auto net_usage_words = dt_itr->data[1].u;
-                    set_total(cpu_usage_us, net_usage_words, period_start);
-                    issue_inflation(period_start);
-                    _resource_config_state.inflation_transferred = true;
+                // count number of each hash
+                system_usage_table u_t(get_self(), get_self().value);
+                for (int i=0; i<oracles.size(); i++) {
+                    auto ut_itr = u_t.begin();
+                    ut_itr = u_t.find(oracles[i].value);
+                    if (ut_itr->submission_hash_list.size() >= 1) {
+                        hash_count[ut_itr->submission_hash_list[0]]++;
+                    }
                 }
 
+                // establish modal hash
+                checksum256 modal_hash;
+                uint8_t mode_count = 0;
+                for (auto const& x : hash_count) {
+                    if (x.second > mode_count) {
+                        modal_hash = x.first;
+                        mode_count = x.second;
+                    }
+                }
+
+                // find dataset corresponding to modal hash, and distribute inflation
+                if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
+                    std::vector<metric> accounts_usage_data;
+                    datasets_table d_t(get_self(), get_self().value);
+                    auto dt_hash_index = d_t.get_index<"hash"_n>();
+                    auto dt_itr = dt_hash_index.find(modal_hash);
+                    if (dt_itr->hash == modal_hash) {
+                        auto cpu_usage_us = dt_itr->data[0].u;
+                        auto net_usage_words = dt_itr->data[1].u;
+                        set_total(cpu_usage_us, net_usage_words, period_start);
+                        issue_inflation(period_start);
+                        _resource_config_state.inflation_transferred = true;
+                    }
+
+                }
+
             }
 
-        }
+        } // end of inflation distribution
 
     }
 
@@ -396,9 +398,6 @@ namespace eosiosystem {
 
         check(length<=_resource_config_state.dataset_max_size, "must supply fewer data values");
         check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
-
-        auto v = _resource_config_state.account_distributions_made;
-        check(std::find(v.begin(), v.end(), dataset_id) == v.end(), "account distributions already made for this dataset and period");
 
         system_usage_table u_t(get_self(), get_self().value);
         auto ut_itr = u_t.find(source.value);
@@ -466,40 +465,44 @@ namespace eosiosystem {
                 }
             }
 
-            // find dataset corresponding to modal hash, and distribute inflation
-            if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
-                std::vector<metric> accounts_usage_data;
-                datasets_table d_t(get_self(), get_self().value);
-                auto dt_hash_index = d_t.get_index<"hash"_n>();
-                auto dt_itr = dt_hash_index.find(modal_hash);
-                if (dt_itr->hash == modal_hash) {
-                    accounts_usage_data = dt_itr->data;
-                }
+            // find dataset corresponding to modal hash, and distribute inflation if not done
+            auto v = _resource_config_state.account_distributions_made;
+            if (std::find(v.begin(), v.end(), dataset_id) == v.end()) {
 
-                // expensive part (100 accounts in ~9000us)
-                auto core_sym = core_symbol();
-                account_pay_table ap_t(get_self(), get_self().value);
-                for (int i=0; i<accounts_usage_data.size(); i++) {
-                    auto account = accounts_usage_data[i].a;
-                    auto account_cpu = accounts_usage_data[i].u;
-                    auto ap_itr = ap_t.find(account.value);
-                    if (ap_itr == ap_t.end()) {
-                        ap_t.emplace(get_self(), [&](auto& t) {
-                            t.account = account;
-                            t.payout = asset(account_cpu, core_sym);
-                            t.timestamp = period_start;
-                        });
-                    } else {
-                        ap_t.modify(ap_itr, get_self(), [&](auto& t) {
-                            t.payout += asset(account_cpu, core_sym);
-                            t.timestamp = period_start;
-                        });
+                if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
+                    std::vector<metric> accounts_usage_data;
+                    datasets_table d_t(get_self(), get_self().value);
+                    auto dt_hash_index = d_t.get_index<"hash"_n>();
+                    auto dt_itr = dt_hash_index.find(modal_hash);
+                    if (dt_itr->hash == modal_hash) {
+                        accounts_usage_data = dt_itr->data;
                     }
-                    update_votes(account, 100); // ignores non existant accounts
-                }
-                _resource_config_state.account_distributions_made.push_back(dataset_id);
 
-            }
+                    // expensive part (100 accounts in ~9000us)
+                    auto core_sym = core_symbol();
+                    account_pay_table ap_t(get_self(), get_self().value);
+                    for (int i=0; i<accounts_usage_data.size(); i++) {
+                        auto account = accounts_usage_data[i].a;
+                        auto account_cpu = accounts_usage_data[i].u;
+                        auto ap_itr = ap_t.find(account.value);
+                        if (ap_itr == ap_t.end()) {
+                            ap_t.emplace(get_self(), [&](auto& t) {
+                                t.account = account;
+                                t.payout = asset(account_cpu, core_sym);
+                                t.timestamp = period_start;
+                            });
+                        } else {
+                            ap_t.modify(ap_itr, get_self(), [&](auto& t) {
+                                t.payout += asset(account_cpu, core_sym);
+                                t.timestamp = period_start;
+                            });
+                        }
+                        update_votes(account, 100); // ignores non-existent accounts
+                    }
+                    _resource_config_state.account_distributions_made.push_back(dataset_id);
+                }
+            } // end of account distributions
+
 
         }
 
