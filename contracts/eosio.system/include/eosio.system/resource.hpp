@@ -26,7 +26,7 @@ namespace eosiosystem {
    {
       uint32_t period_seconds = 86400; // how many seconds in each period, low numbers used for testing
       uint16_t oracle_consensus_threshold; // how many oracles are required for mode to trigger distribution
-      uint16_t dataset_max_size; // how many individual accounts are submitted at once
+      uint16_t dataset_batch_size; // how many individual accounts are submitted at once
       time_point_sec period_start; // when the period currently open for reporting started
       std::vector<name> submitting_oracles; // oracles which have sent at least one dataset for this period
       bool inflation_transferred = false;
@@ -43,11 +43,6 @@ namespace eosiosystem {
       time_point_sec period_start;
       uint32_t hs_score; // how many modal submissions oracle has made
       float exponential_avg_success_score;
-      asset collateral_fund; // available for future collateral
-      asset collateral_posted; // returned to liquid after successful submission round
-      asset quote_fee; // how much oracle will be paid for modal submission
-      float quote_score; // calculated based on hs_score/collateral etc.
-      bool quote_accepted; // active participant in this round
       uint64_t primary_key() const { return (account.value); }
    };
 
@@ -105,6 +100,24 @@ namespace eosiosystem {
       uint64_t primary_key() const { return (feature.value); }
    };
 
+  // may not need this redefinition
+  struct producer_info_2 {
+    name                  owner;
+    double                total_votes = 0;
+    eosio::public_key     producer_key; /// a packed public key object
+    bool                  is_active = true;
+    std::string           url;
+    uint32_t              unpaid_blocks = 0;
+    time_point            last_claim_time;
+    uint16_t              location = 0;
+
+    uint64_t primary_key()const { return owner.value;                             }
+    double   by_votes()const    { return is_active ? -total_votes : total_votes;  }
+    bool     active()const      { return is_active;                               }
+    //void     deactivate()       { producer_key = public_key(); is_active = false; }
+  };
+
+
    typedef eosio::singleton<"resourceconf"_n, resource_config_state> resource_config_singleton;
    typedef eosio::multi_index<"ressources"_n, sources> sources_table;
    typedef eosio::multi_index<"ressysusage"_n, system_usage> system_usage_table;
@@ -113,6 +126,11 @@ namespace eosiosystem {
    typedef eosio::multi_index<"feattoggle"_n, feature_toggle> feature_toggle_table;
    typedef eosio::multi_index<"resusagedata"_n, datasets, 
             indexed_by<"hash"_n, const_mem_fun<datasets, checksum256, &datasets::by_hash>>> datasets_table;
+
+   // may not need this assignment
+   typedef eosio::multi_index< "producers"_n, producer_info_2,
+                               indexed_by<"prototalvote"_n, const_mem_fun<producer_info_2, double, &producer_info_2::by_votes>  >
+                             > producers_info_table;
 }
 
 namespace worbli {

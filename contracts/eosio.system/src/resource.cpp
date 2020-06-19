@@ -4,6 +4,21 @@
 
 namespace eosiosystem {
 
+    // check if calling account is a qualified oracle
+    bool is_oracle(const name owner){
+      producers_info_table ptable("eosio"_n, name("eosio").value);
+      auto p_idx = ptable.get_index<"prototalvote"_n>();
+      auto p_itr = p_idx.begin();
+      uint64_t count = 0;
+      while (p_itr != p_idx.end()) {
+        if (p_itr->owner==owner) return true;
+        p_itr++;
+        count++;
+        if (count>100) break;
+      }
+      return false;
+    }
+
     // called from settotalusg 
     void system_contract::set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start)
     {
@@ -256,13 +271,14 @@ namespace eosiosystem {
     }
 
 
-    ACTION system_contract::initresource(uint16_t dataset_max_size, uint16_t oracle_consensus_threshold, time_point_sec period_start)
+    ACTION system_contract::initresource(uint16_t dataset_batch_size, uint16_t oracle_consensus_threshold, time_point_sec period_start, uint32_t period_seconds)
     {
         require_auth(get_self());
 
-        _resource_config_state.dataset_max_size = dataset_max_size;
+        _resource_config_state.dataset_batch_size = dataset_batch_size;
         _resource_config_state.oracle_consensus_threshold = oracle_consensus_threshold;
         _resource_config_state.period_start = period_start;
+        _resource_config_state.period_seconds = period_seconds;
 
         system_usage_history_table u_t(get_self(), get_self().value);
         if (u_t.begin() == u_t.end()) {
@@ -288,7 +304,7 @@ namespace eosiosystem {
     ACTION system_contract::settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start)
     {
         require_auth(source);
-//        check(is_source(source) == true, "not authorized to execute this action");
+        check(is_oracle(source) == true, "not a qualified oracle");
 
         check(total_cpu_us > 0, "cpu measurement must be greater than 0");
         check(total_net_words > 0, "net measurement must be greater than 0");
@@ -388,15 +404,15 @@ namespace eosiosystem {
 
     // adds the CPU used by the accounts included (for calling oracle)
     // called after the oracle has set the total
-    ACTION system_contract::addactusg(name source, uint16_t dataset_id, const std::vector<metric>& data, time_point_sec period_start)
+    ACTION system_contract::addactusg(name source, uint16_t dataset_id, const std::vector<metric>& dataset, time_point_sec period_start)
     {  
         require_auth(source);
-//        check(is_source(source) == true, "not authorized to execute this action");
+        check(is_oracle(source) == true, "not a qualified oracle");
 
-        int length = data.size();
-        check(length>0, "must supply more than zero data values");
+        int length = dataset.size();
+        check(length>0, "must supply more than zero dataset values");
 
-        check(length<=_resource_config_state.dataset_max_size, "must supply fewer data values");
+        check(length<=_resource_config_state.dataset_batch_size, "must supply fewer dataset values");
         check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
 
         system_usage_table u_t(get_self(), get_self().value);
@@ -406,8 +422,8 @@ namespace eosiosystem {
 
         std::string datatext = "";
         for (int i=0; i<length; i++) {
-            auto account = data[i].a;
-            auto cpu_usage_us = data[i].u;
+            auto account = dataset[i].a;
+            auto cpu_usage_us = dataset[i].u;
             check(cpu_usage_us > 0, "account cpu measurement must be greater than 0");
 
             // add cpu to allocated amount for oracle to ensure not exceeding declared total
@@ -422,7 +438,7 @@ namespace eosiosystem {
             datatext += std::to_string(cpu_usage_us);
         }
 
-        // hash submitted data
+        // hash submitted dataset
         checksum256 hash = sha256(datatext.c_str(), datatext.size());
         u_t.modify(ut_itr, get_self(), [&](auto& t) {
             t.submission_hash_list.push_back(hash);
@@ -436,7 +452,7 @@ namespace eosiosystem {
             d_t.emplace(get_self(), [&](auto& t) {
                 t.id = d_t.available_primary_key();
                 t.hash = hash;
-                t.data = data;
+                t.data = dataset;
             });
         }
 
@@ -567,11 +583,6 @@ namespace eosiosystem {
             s.period_start = _resource_config_state.period_start; // todo - advance
             s.hs_score = 0;
             s.exponential_avg_success_score = 0;
-            s.collateral_fund = asset(0, core_symbol() );
-            s.collateral_posted = asset(0, core_symbol() );
-            s.quote_fee = asset(0, core_symbol() );
-            s.quote_score = 0;
-            s.quote_accepted = false;
         });
     }
 
@@ -582,59 +593,6 @@ namespace eosiosystem {
         auto itr = s_t.find(account.value);
         check(itr != s_t.end(), "authorized source account not found during removal");
         itr = s_t.erase(itr);
-    }
-
-    // bid for inclusion in oracle set for data submission for next period
-    ACTION system_contract::dataquote(name account, asset quote_fee, asset collateral)
-    {
-        require_auth(account);
-
-        auto collateral_required = asset(1, core_symbol() );
-
-        sources_table s_t(get_self(), get_self().value);
-        auto itr = s_t.find(account.value);
-        check(itr != s_t.end(), "account is not approved");
-        check(itr->collateral_fund >= collateral_required, "insufficient balance for collateralization");
-
-        collateral = std::max(collateral, collateral_required);
-
-        s_t.modify(itr, same_payer, [&](auto &t) {
-            t.quote_fee = quote_fee;
-            t.collateral_fund -= collateral;
-            t.collateral_posted = collateral;
-            // todo - calculate quote_score
-        });
-
-    }
-
-    ACTION system_contract::reswithdraw(name account, asset quantity)
-    {
-        require_auth(account);
-        sources_table s_t(get_self(), get_self().value);
-        auto itr = s_t.find(account.value);
-        check(itr != s_t.end(), "account is not approved");
-        check(itr->collateral_fund >= quantity, "insufficient balance");
-        s_t.modify(itr, same_payer, [&](auto &t) {
-            t.collateral_fund -= quantity;
-        });
-
-        action(
-          permission_level{ _self, "active"_n },
-          "eosio.token"_n, "transfer"_n,
-          std::make_tuple(_self, account, quantity, std::string("Withdraw Resource Oracle Collateral"))
-        ).send();
-    }
-
-    void system_contract::ontransfer(name from, name to, asset quantity, std::string memo) {
-        if (!(from == _self)) {
-            if (memo == "Fund Resource Oracle Collateral") {
-                sources_table s_t(get_self(), get_self().value);
-                auto itr = s_t.find(from.value);
-                s_t.modify(itr, same_payer, [&](auto &t) {
-                    t.collateral_fund += quantity;
-                });
-            }
-        }
     }
 
     ACTION system_contract::activatefeat(name feature) {
