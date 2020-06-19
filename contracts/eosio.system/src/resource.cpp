@@ -4,6 +4,18 @@
 
 namespace eosiosystem {
 
+    // function for converting checksum256 into string
+    template<typename CharT>
+    static std::string to_hex(const CharT* d, uint32_t s) {
+      std::string r;
+      const char* to_hex="0123456789abcdef";
+      uint8_t* c = (uint8_t*)d;
+      for( uint32_t i = 0; i < s; ++i ) {
+        (r += to_hex[(c[i] >> 4)]) += to_hex[(c[i] & 0x0f)];
+      }
+      return r;
+    }
+
     // check if calling account is a qualified oracle
     bool is_oracle(const name owner){
       producers_info_table ptable("eosio"_n, name("eosio").value);
@@ -301,7 +313,7 @@ namespace eosiosystem {
 
     // sets total resources used by system (for calling oracle)
     // this must be called by oracle before adding individual cpu usage
-    ACTION system_contract::settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start)
+    ACTION system_contract::settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, checksum256 all_data_hash, time_point_sec period_start)
     {
         require_auth(source);
         check(is_oracle(source) == true, "not a qualified oracle");
@@ -324,7 +336,7 @@ namespace eosiosystem {
         check(itr == u_t.end(), "total already set");
 
         // hash submitted data
-        std::string datatext = std::to_string(total_cpu_us) + std::to_string(total_net_words);
+        std::string datatext = std::to_string(total_cpu_us) + "-" + std::to_string(total_net_words);
         checksum256 hash = sha256(datatext.c_str(), datatext.size());
         std::vector<metric> data {
             {"cpu.us"_n, total_cpu_us},
@@ -349,6 +361,7 @@ namespace eosiosystem {
             t.total_cpu_us = total_cpu_us;
             t.total_net_words = total_net_words;
             t.submission_hash_list.push_back(hash);
+            t.all_data_hash = all_data_hash;
         });
 
         _resource_config_state.submitting_oracles.push_back(source);
@@ -414,6 +427,8 @@ namespace eosiosystem {
 
         check(length<=_resource_config_state.dataset_batch_size, "must supply fewer dataset values");
         check(_resource_config_state.period_start == period_start, "period_start does not match current period_start");
+
+        check(_resource_config_state.inflation_transferred == true, "inflation not yet transferred");
 
         system_usage_table u_t(get_self(), get_self().value);
         auto ut_itr = u_t.find(source.value);
@@ -532,6 +547,7 @@ namespace eosiosystem {
         auto period_start_seconds = _resource_config_state.period_start.sec_since_epoch();
         if (current_seconds >= (period_start_seconds + (_resource_config_state.period_seconds * 2))) {
 
+            // erase records ready for next periods submissions
             datasets_table d_t(get_self(), get_self().value);
             auto dt_itr = d_t.begin();
             while (dt_itr != d_t.end()) {
@@ -539,6 +555,35 @@ namespace eosiosystem {
             }
 
             system_usage_table u_t(get_self(), get_self().value);
+
+            // score submissions based on commitment hash and modal agreement
+            auto oracles = _resource_config_state.submitting_oracles;
+            for (int i=0; i<oracles.size(); i++) {
+                auto ut_itr = u_t.begin();
+                ut_itr = u_t.find(oracles[i].value);
+
+                std::string datatext = "";
+                for (int ii=0; ii<ut_itr->submission_hash_list.size(); ii++) {
+                    checksum256 hash = ut_itr->submission_hash_list[ii];
+                    datatext += to_hex(hash.extract_as_byte_array().data(), sizeof(hash));
+                    if (ii < ut_itr->submission_hash_list.size()-1) {
+                        datatext += "-";
+                    }
+                }
+
+                uint64_t oracle_points = 0;
+                checksum256 commit_hash = ut_itr->all_data_hash;
+                checksum256 reveal_hash = sha256(datatext.c_str(), datatext.size());
+                if (reveal_hash == commit_hash) {
+                    oracle_points = 100; // data is as declared
+                }
+
+                // todo - check modal all_data_hash, and award points
+//                print(hash, '\n');
+            }
+
+
+            // erase records ready for next periods submissions
             auto ut_itr = u_t.begin();
             while (ut_itr != u_t.end()) {
                 ut_itr = u_t.erase(ut_itr);

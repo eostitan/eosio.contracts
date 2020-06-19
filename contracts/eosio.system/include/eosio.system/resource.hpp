@@ -54,6 +54,7 @@ namespace eosiosystem {
       uint64_t total_net_words;
       uint64_t allocated_cpu = 0; // how much has been allocated to individual accounts
       std::vector<checksum256> submission_hash_list; // hash of each individual data submission
+      checksum256 all_data_hash; // acts as commitment for all subsequent data for scoring
       uint64_t primary_key() const { return (source.value); }
    };
 
@@ -82,6 +83,7 @@ namespace eosiosystem {
       asset bppay_tokens;
       asset net_tokens;
       time_point_sec timestamp;
+//      checksum256 all_data_hash;
       uint64_t primary_key() const { return (id); }
    };
 

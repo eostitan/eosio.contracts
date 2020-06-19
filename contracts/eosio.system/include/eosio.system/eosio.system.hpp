@@ -1275,7 +1275,7 @@ namespace eosiosystem {
 
          // functions defined in resource.cpp
          // resource DISTRIBUTION functions
-         ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start);
+         ACTION settotalusg(name source, uint64_t total_cpu_us, uint64_t total_net_words, checksum256 all_data_hash, time_point_sec period_start);
          ACTION addactusg(name source, uint16_t dataset_id, const std::vector<metric>& dataset, time_point_sec period_start);
          ACTION nextperiod();
          ACTION claimdistrib(name account);
