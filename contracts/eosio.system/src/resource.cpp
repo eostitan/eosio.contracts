@@ -34,8 +34,6 @@ namespace eosiosystem {
     // called from settotalusg 
     void system_contract::set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start)
     {
-
-//        check(!_resource_config_state.locked, "prior collection period is still open");
         check(total_cpu_us > 0, "cpu measurement must be greater than 0");
         check(total_net_words > 0, "net measurement must be greater than 0");
 
@@ -509,22 +507,31 @@ namespace eosiosystem {
                         accounts_usage_data = dt_itr->data;
                     }
 
+                    // get total_cpu from last system_usage_history record
+                    system_usage_history_table suh_t(get_self(), get_self().value);
+                    auto suh_itr = suh_t.end();
+                    suh_itr--;
+                    auto total_cpu = suh_itr->total_cpu_us;
+                    auto utility_tokens_amount = suh_itr->utility_tokens.amount;
+
                     // expensive part (100 accounts in ~9000us)
                     auto core_sym = core_symbol();
                     account_pay_table ap_t(get_self(), get_self().value);
                     for (int i=0; i<accounts_usage_data.size(); i++) {
                         auto account = accounts_usage_data[i].a;
                         auto account_cpu = accounts_usage_data[i].u;
+                        auto add_claim = (static_cast<float>(account_cpu) / total_cpu) * utility_tokens_amount;
+                        asset payout = asset(add_claim, core_symbol());
                         auto ap_itr = ap_t.find(account.value);
                         if (ap_itr == ap_t.end()) {
                             ap_t.emplace(get_self(), [&](auto& t) {
                                 t.account = account;
-                                t.payout = asset(account_cpu, core_sym);
+                                t.payout = payout;
                                 t.timestamp = period_start;
                             });
                         } else {
                             ap_t.modify(ap_itr, get_self(), [&](auto& t) {
-                                t.payout += asset(account_cpu, core_sym);
+                                t.payout += payout;
                                 t.timestamp = period_start;
                             });
                         }
