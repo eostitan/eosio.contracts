@@ -32,21 +32,19 @@ namespace eosiosystem {
       bool inflation_transferred = false;
       std::vector<uint16_t> account_distributions_made = {}; // which datasets have reached consensus and been distributed
       uint32_t emadraglimit = 2;
+      float value_transfer_constant = 0.0185;
+      float max_pay_constant = 0.2947;
    };
 
-   // represents the state of oracle bidding for the period
-   // when oracle quotes, if accepted collateral is taken from liquid_balance
-
+   // holds the points score of oracles (based on commit-reveal and modal hash matches)
    struct [[eosio::table("ressources"), eosio::contract("eosio.system")]] sources
    {
       name account;
-      time_point_sec period_start;
-      uint32_t hs_score; // how many modal submissions oracle has made
-      float exponential_avg_success_score;
+      uint32_t score;
       uint64_t primary_key() const { return (account.value); }
    };
 
-   // totals data as submitted by each oracle
+   // totals data as submitted by each oracle for current period
    struct [[eosio::table("ressysusage"), eosio::contract("eosio.system")]] system_usage
    {
       name source; // oracle source

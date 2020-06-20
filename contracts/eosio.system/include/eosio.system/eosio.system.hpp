@@ -1280,12 +1280,9 @@ namespace eosiosystem {
          ACTION nextperiod();
          ACTION claimdistrib(name account);
          // resource CONFIGURATION functions
-         ACTION adddatasrc(name account);
-         ACTION deldatasrc(name account);
          ACTION activatefeat(name feature);
 
          // resource helper functions
-         bool is_source(name source);
          void update_votes( const name& voter_name, uint64_t weight );
          void set_total(uint64_t total_cpu_us, uint64_t total_net_words, time_point_sec period_start);
          void issue_inflation(time_point_sec period_start);

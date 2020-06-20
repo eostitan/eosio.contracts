@@ -44,8 +44,8 @@ namespace eosiosystem {
         itr--;
 
         // Initial Inflation
-        float VT = 0.0185; // Initial Inflation Constant for Value Transfer
-        float MP = 0.2947; // TO-DO: move these 2 constants to the config talbe for easier adjusting?
+        float VT = _resource_config_state.value_transfer_constant;
+        float MP = _resource_config_state.max_pay_constant;
 
         uint64_t draglimit = _resource_config_state.emadraglimit;
         uint64_t day_count = itr->daycount + 1;
@@ -556,8 +556,29 @@ namespace eosiosystem {
 
             system_usage_table u_t(get_self(), get_self().value);
 
-            // score submissions based on commitment hash and modal agreement
             auto oracles = _resource_config_state.submitting_oracles;
+
+            // find modal all_data_hash
+            std::map<checksum256, uint8_t> hash_count;
+            checksum256 modal_hash;
+            uint8_t mode_count = 0;
+            if (oracles.size() >= _resource_config_state.oracle_consensus_threshold) {
+                // count number of each hash
+                for (int i=0; i<oracles.size(); i++) {
+                    auto ut_itr = u_t.begin();
+                    ut_itr = u_t.find(oracles[i].value);
+                    hash_count[ut_itr->all_data_hash]++;
+                }
+                // establish modal hash
+                for (auto const& x : hash_count) {
+                    if (x.second > mode_count) {
+                        modal_hash = x.first;
+                        mode_count = x.second;
+                    }
+                }
+            }
+
+            // score submissions based on commitment hash and modal agreement
             for (int i=0; i<oracles.size(); i++) {
                 auto ut_itr = u_t.begin();
                 ut_itr = u_t.find(oracles[i].value);
@@ -571,15 +592,31 @@ namespace eosiosystem {
                     }
                 }
 
-                uint64_t oracle_points = 0;
-                checksum256 commit_hash = ut_itr->all_data_hash;
-                checksum256 reveal_hash = sha256(datatext.c_str(), datatext.size());
-                if (reveal_hash == commit_hash) {
-                    oracle_points = 100; // data is as declared
-                }
+                if (mode_count >= _resource_config_state.oracle_consensus_threshold) {
+                    uint64_t oracle_points = 0;
+                    checksum256 commit_hash = ut_itr->all_data_hash;
+                    checksum256 reveal_hash = sha256(datatext.c_str(), datatext.size());
+                    if (reveal_hash == commit_hash) {
+                        oracle_points = 100; // data is as declared
+                        if ((commit_hash == modal_hash) && (mode_count >= _resource_config_state.oracle_consensus_threshold)) {
+                            oracle_points += 100;
+                        }
+                    }
 
-                // todo - check modal all_data_hash, and award points
-//                print(hash, '\n');
+                    // add/modify score in sources table
+                    sources_table s_t(get_self(), get_self().value);
+                    auto st_itr = s_t.find(oracles[i].value);
+                    if (st_itr == s_t.end()) {
+                        s_t.emplace(get_self(), [&](auto& t) {
+                            t.account = oracles[i];
+                            t.score = oracle_points;
+                        });
+                    } else {
+                        s_t.modify(st_itr, get_self(), [&](auto& t) {
+                            t.score += oracle_points;
+                        });
+                    }
+                }
             }
 
 
@@ -617,29 +654,6 @@ namespace eosiosystem {
         itr = a_t.erase(itr);
     }
 
-    ACTION system_contract::adddatasrc(name account)
-    {
-        require_auth(get_self());
-        sources_table s_t(get_self(), get_self().value);
-        auto itr = s_t.find(account.value);
-        check(itr == s_t.end(), "authorized source account already exists in sources table");
-        s_t.emplace(get_self(), [&](auto &s) {
-            s.account = account;
-            s.period_start = _resource_config_state.period_start; // todo - advance
-            s.hs_score = 0;
-            s.exponential_avg_success_score = 0;
-        });
-    }
-
-    ACTION system_contract::deldatasrc(name account)
-    {
-        require_auth(get_self());
-        sources_table s_t(get_self(), get_self().value);
-        auto itr = s_t.find(account.value);
-        check(itr != s_t.end(), "authorized source account not found during removal");
-        itr = s_t.erase(itr);
-    }
-
     ACTION system_contract::activatefeat(name feature) {
         require_auth(get_self());
         feature_toggle_table f_t(get_self(), get_self().value);
@@ -651,20 +665,6 @@ namespace eosiosystem {
             f.feature = feature;
             f.active = true;
         });
-    }
-
-    bool system_contract::is_source(name source)
-    {
-        sources_table s_t(get_self(), get_self().value);
-        auto itr = s_t.find(source.value);
-        if (itr == s_t.end())
-        {
-            return false;
-        }
-        else
-        {
-            return true;
-        }
     }
 
    void system_contract::update_votes( const name& voter_name, uint64_t weight ) {
