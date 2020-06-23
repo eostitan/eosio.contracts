@@ -281,7 +281,7 @@ namespace eosiosystem {
     }
 
 
-    ACTION system_contract::initresource(uint16_t dataset_batch_size, uint16_t oracle_consensus_threshold, time_point_sec period_start, uint32_t period_seconds)
+    ACTION system_contract::initresource(uint16_t dataset_batch_size, uint16_t oracle_consensus_threshold, time_point_sec period_start, uint32_t period_seconds, float value_transfer_constant, float max_pay_constant)
     {
         require_auth(get_self());
 
@@ -289,6 +289,8 @@ namespace eosiosystem {
         _resource_config_state.oracle_consensus_threshold = oracle_consensus_threshold;
         _resource_config_state.period_start = period_start;
         _resource_config_state.period_seconds = period_seconds;
+        _resource_config_state.value_transfer_constant = value_transfer_constant;
+        _resource_config_state.max_pay_constant = max_pay_constant;
 
         system_usage_history_table u_t(get_self(), get_self().value);
         if (u_t.begin() == u_t.end()) {
