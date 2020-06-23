@@ -32,7 +32,7 @@ namespace eosiosystem {
       bool inflation_transferred = false;
       std::vector<uint16_t> account_distributions_made = {}; // which datasets have reached consensus and been distributed
       uint32_t emadraglimit = 2;
-      float value_transfer_constant = 0.0185;
+      float initial_value_transfer_rate = 0.1;
       float max_pay_constant = 0.2947;
    };
 
@@ -60,6 +60,7 @@ namespace eosiosystem {
    {
       uint64_t id;
       uint32_t daycount;
+      float value_transfer_rate;
       uint64_t total_cpu_us;
       uint64_t total_net_words;
       float net_percent_total;
